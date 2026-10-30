@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Contract of the SOAP service other government systems use to query agreement status.
+     The WSDL is generated from this schema at /ws/agreements.wsdl. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="urn:cooperation-registry:agreements:v1"
+           targetNamespace="urn:cooperation-registry:agreements:v1"
+           elementFormDefault="qualified">
+
+    <xs:element name="GetAgreementStatusRequest">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="registrationNumber" type="xs:string"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="GetAgreementStatusResponse">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="registrationNumber" type="xs:string"/>
+                <xs:element name="title" type="xs:string"/>
+                <xs:element name="status" type="xs:string"/>
+                <xs:element name="signedOn" type="xs:date" minOccurs="0"/>
+                <xs:element name="validUntil" type="xs:date" minOccurs="0"/>
+                <xs:element name="openItems" type="xs:int"/>
+                <xs:element name="overdueItems" type="xs:int"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and test (Java 21, PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: registry
+          POSTGRES_USER: registry
+          POSTGRES_PASSWORD: registry
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U registry"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build, run tests, package WAR
+        shell: bash
+        run: |
+          set -o pipefail
+          mvn -B -ntp verify 2>&1 | tee build.log
+      - name: Summarise failures
+        if: failure()
+        run: python3 .github/scripts/annotate.py build.log
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: registry-war
+          path: target/registry.war
+          retention-days: 7
+
+  tomcat-smoke:
+    name: Deploy WAR on Tomcat 10.1 behind Nginx and smoke-test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start PostgreSQL 16 + Tomcat 10.1 + Nginx
+        run: docker compose up -d --build
+      - name: Wait for the application
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8080/actuator/health | grep -q '"UP"'; then echo "up after ${i}x3s"; exit 0; fi
+            sleep 3
+          done
+          echo "application did not become healthy"; exit 1
+      - name: Smoke test through Nginx
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=http://localhost:8080
+          token=$(curl -fs -X POST "$base/api/auth/login" -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"Demo2026!pass"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])')
+          curl -fs "$base/api/dashboard" -H "Authorization: Bearer $token" -H 'Accept-Language: ru' | tee dashboard.json
+          echo
+          curl -fs "$base/api/reports/agreements?format=PDF" -H "Authorization: Bearer $token" -o report.pdf
+          head -c 5 report.pdf | grep -q '%PDF-'
+          curl -fs -u integration:integration-demo "$base/ws/agreements.wsdl" | grep -q GetAgreementStatusRequest
+          curl -fs -u integration:integration-demo -H 'Content-Type: text/xml; charset=utf-8' "$base/ws" -d \
+            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a="urn:cooperation-registry:agreements:v1"><soapenv:Body><a:GetAgreementStatusRequest><a:registrationNumber>INT-2026-001</a:registrationNumber></a:GetAgreementStatusRequest></soapenv:Body></soapenv:Envelope>' \
+            | tee soap.xml | grep -q 'IN_FORCE'
+          curl -fs "$base/v3/api-docs" -o openapi.json
+          python3 -c 'import json; d=json.load(open("openapi.json")); print(len(d["paths"]), "API paths documented")'
+          docker compose exec -T app sh -c 'ls /usr/local/tomcat/lib/catalina.jar && java -version 2>&1 | head -1'
+      - name: Application logs on failure
+        if: failure()
+        run: |
+          docker compose logs --no-color app > app.log 2>&1 || true
+          python3 - <<'EOF'
+          lines = open("app.log", errors="replace").read().splitlines()
+          tail = "\n".join(lines[-80:]).replace("%", "%25").replace("\n", "%0A")
+          print(f"::error title=Tomcat log tail::{tail}")
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: openapi
+          path: openapi.json
+          if-no-files-found: ignore

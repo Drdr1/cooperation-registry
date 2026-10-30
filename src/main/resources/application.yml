@@ -1,0 +1,110 @@
+spring:
+  application:
+    name: cooperation-registry
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/registry}
+    username: ${DB_USER:registry}
+    password: ${DB_PASSWORD:registry}
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate          # Flyway owns the schema; Hibernate only checks it matches.
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+  mvc:
+    problemdetails:
+      enabled: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  forward-headers-strategy: framework   # trust X-Forwarded-* from the Nginx in front
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+app:
+  default-locale: uz
+  jwt:
+    # Must be overridden in production (32+ random bytes, e.g. `openssl rand -base64 48`).
+    secret: ${JWT_SECRET:change-me-change-me-change-me-change-me-0123456789}
+    issuer: cooperation-registry
+    ttl: PT8H
+  security:
+    max-failed-logins: 5
+    lockout: PT15M
+  bootstrap:
+    # Creates the first administrator when the user table is empty.
+    admin-username: ${BOOTSTRAP_ADMIN_USERNAME:admin}
+    admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  oneid:
+    mode: ${ONEID_MODE:mock}                # mock | http
+    authorize-url: ${ONEID_AUTHORIZE_URL:https://oneid.example/authorize}
+    token-url: ${ONEID_TOKEN_URL:https://oneid.example/token}
+    userinfo-url: ${ONEID_USERINFO_URL:https://oneid.example/userinfo}
+    client-id: ${ONEID_CLIENT_ID:registry}
+    client-secret: ${ONEID_CLIENT_SECRET:}
+    redirect-uri: ${ONEID_REDIRECT_URI:https://registry.example/auth/callback}
+    scope: ${ONEID_SCOPE:openid profile}
+    subject-attribute: ${ONEID_SUBJECT_ATTRIBUTE:sub}
+    name-attribute: ${ONEID_NAME_ATTRIBUTE:name}
+  external-registry:
+    mode: ${EXTERNAL_REGISTRY_MODE:mock}    # mock | soap
+    url: ${EXTERNAL_REGISTRY_URL:https://registry.gov.example/ws}
+  soap:
+    # Credentials for external systems calling our SOAP endpoint (/ws).
+    username: ${SOAP_USERNAME:integration}
+    password: ${SOAP_PASSWORD:}
+  notifications:
+    reminder-days: 7
+    expiry-warning-days: 30
+    cron: "0 0 7 * * *"
+    zone: Asia/Tashkent
+
+---
+spring:
+  config:
+    activate:
+      on-profile: demo
+  flyway:
+    locations: classpath:db/migration,classpath:db/demo
+app:
+  soap:
+    password: ${SOAP_PASSWORD:integration-demo}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+  flyway:
+    locations: classpath:db/migration,classpath:db/demo
+app:
+  soap:
+    password: integration-test
+  notifications:
+    cron: "-"   # disabled; tests call the job directly

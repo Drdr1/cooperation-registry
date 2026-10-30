@@ -1,0 +1,37 @@
+# Demo stack mirroring production: PostgreSQL 16, the WAR on Tomcat 10.1, Nginx in front.
+# Open http://localhost:8080/swagger-ui.html  (demo accounts in README)
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: registry
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registry
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry"]
+      interval: 5s
+      retries: 12
+
+  app:
+    build: .
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      SPRING_PROFILES_ACTIVE: demo
+      DB_URL: jdbc:postgresql://db:5432/registry
+      DB_USER: registry
+      DB_PASSWORD: registry
+      JWT_SECRET: demo-only-secret-please-change-0123456789abcdef
+      SOAP_PASSWORD: integration-demo
+      TZ: Asia/Tashkent
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on: [app]
+    ports: ["8080:80"]
+    volumes:
+      - ./deploy/nginx/registry.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  pgdata:
